@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resume Tailor</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo">RT</span> Resume Tailor</div>
+    <nav class="tabs">
+      <button data-tab="tailor" class="active">Tailor</button>
+      <button data-tab="master">Master Resume</button>
+      <button data-tab="history">History</button>
+      <button data-tab="settings">Settings</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ============ TAILOR ============ -->
+    <section id="tab-tailor" class="tab active">
+      <div id="setup-banner" class="banner hidden"></div>
+
+      <div class="card" id="jd-card">
+        <h2>1. Paste the job description</h2>
+        <textarea id="jd" rows="12" placeholder="Paste the full job description here (title, company, responsibilities, requirements)..."></textarea>
+        <div class="row">
+          <label>Length
+            <select id="pages">
+              <option value="1">1 page</option>
+              <option value="2">Up to 2 pages</option>
+            </select>
+          </label>
+          <label class="grow">Extra instructions (optional)
+            <input id="extra" type="text" placeholder="e.g. emphasise my fintech work, keep the AI project">
+          </label>
+        </div>
+        <div class="row end">
+          <button id="tailor-btn" class="primary">Tailor my resume</button>
+        </div>
+      </div>
+
+      <div id="result" class="hidden">
+        <div class="card">
+          <div class="result-head">
+            <div>
+              <h2 id="r-title">Tailored resume</h2>
+              <div class="muted" id="r-sub"></div>
+            </div>
+            <div class="scores">
+              <div class="score"><span id="s-before">–</span><small>before</small></div>
+              <div class="arrow">→</div>
+              <div class="score good"><span id="s-after">–</span><small>after</small></div>
+            </div>
+          </div>
+          <div class="grid2">
+            <div>
+              <h3>Keywords covered</h3>
+              <div id="kw-matched" class="chips"></div>
+              <h3>Missing (not in your experience)</h3>
+              <div id="kw-missing" class="chips warn"></div>
+            </div>
+            <div>
+              <h3>What changed</h3>
+              <ul id="changes"></ul>
+              <h3>Gaps &amp; tips</h3>
+              <ul id="tips"></ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row between">
+            <h2>2. Review &amp; edit</h2>
+            <div class="btns">
+              <button id="r-preview">Preview PDF</button>
+              <button id="r-docx">Download DOCX</button>
+              <button id="r-pdf" class="primary">Download PDF</button>
+            </div>
+          </div>
+          <p class="muted">Edit anything below; downloads always use what's in the editor. Changes are saved to History automatically.</p>
+          <div class="split">
+            <div id="r-editor" class="editor"></div>
+            <div class="preview-wrap"><iframe id="r-frame" title="PDF preview"></iframe><div id="r-frame-hint" class="frame-hint">Click "Preview PDF" to see the formatted resume here.</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MASTER ============ -->
+    <section id="tab-master" class="tab">
+      <div class="card">
+        <h2>Master resume</h2>
+        <p class="muted">This is the full, honest version of the resume. Every tailored resume is built from it, so include everything (all roles, projects, skills). Do this once; update it whenever something changes.</p>
+        <div class="import">
+          <label class="file">
+            <input type="file" id="m-file" accept=".pdf,.docx,.txt,.md">
+            <span>Upload resume (PDF / DOCX / TXT)</span>
+          </label>
+          <span class="muted">or</span>
+          <button id="m-paste-toggle">Paste text instead</button>
+          <button id="m-blank">Start blank</button>
+        </div>
+        <div id="m-paste" class="hidden">
+          <textarea id="m-text" rows="10" placeholder="Paste the full resume text..."></textarea>
+          <div class="row end"><button id="m-parse" class="primary">Import pasted text</button></div>
+        </div>
+      </div>
+
+      <div class="card" id="m-edit-card">
+        <div class="row between">
+          <h2>Edit master resume</h2>
+          <div class="btns">
+            <button id="m-preview">Preview PDF</button>
+            <button id="m-save" class="primary">Save master resume</button>
+          </div>
+        </div>
+        <div id="m-empty" class="muted">No master resume yet. Upload or paste one above.</div>
+        <div class="split">
+          <div id="m-editor" class="editor"></div>
+          <div class="preview-wrap"><iframe id="m-frame" title="PDF preview"></iframe><div id="m-frame-hint" class="frame-hint">Click "Preview PDF" to see it formatted.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HISTORY ============ -->
+    <section id="tab-history" class="tab">
+      <div class="card">
+        <h2>History</h2>
+        <p class="muted">Every tailored resume is saved here on this computer.</p>
+        <table class="history">
+          <thead><tr><th>Date</th><th>Role</th><th>Company</th><th>Match</th><th></th></tr></thead>
+          <tbody id="h-body"></tbody>
+        </table>
+        <div id="h-empty" class="muted hidden">Nothing yet. Tailor your first resume!</div>
+      </div>
+    </section>
+
+    <!-- ============ SETTINGS ============ -->
+    <section id="tab-settings" class="tab">
+      <div class="card narrow">
+        <h2>AI settings</h2>
+        <label>Provider
+          <select id="st-provider"></select>
+        </label>
+        <label>API key
+          <input id="st-key" type="password" autocomplete="off" placeholder="Paste API key">
+          <small class="muted" id="st-key-hint"></small>
+        </label>
+        <label id="st-base-wrap">API base URL
+          <input id="st-base" type="text" placeholder="https://.../v1">
+          <small class="muted">Only for OpenAI-compatible providers. Leave blank to use the preset.</small>
+        </label>
+        <label>Model
+          <input id="st-model" type="text">
+          <small class="muted" id="st-model-hint"></small>
+        </label>
+        <label>Paper size
+          <select id="st-paper"><option value="A4">A4</option><option value="Letter">US Letter</option></select>
+        </label>
+        <div class="row end">
+          <button id="st-test">Test connection</button>
+          <button id="st-save" class="primary">Save</button>
+        </div>
+        <div id="st-status" class="muted"></div>
+        <p class="muted small">The key is stored only on this computer, in <code>data/settings.json</code>.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="overlay" class="overlay hidden"><div class="spinner"></div><div id="overlay-msg">Working…</div></div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
