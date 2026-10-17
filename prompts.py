@@ -67,7 +67,12 @@ ANALYSIS_SCHEMA = _obj({
     "gaps_and_tips": _STR_LIST,
 })
 
-TAILOR_SCHEMA = _obj({"analysis": ANALYSIS_SCHEMA, "resume": copy.deepcopy(RESUME_SCHEMA)})
+TAILOR_SCHEMA = _obj({
+    "analysis": ANALYSIS_SCHEMA,
+    "resume": copy.deepcopy(RESUME_SCHEMA),
+})
+
+COVER_LETTER_SCHEMA = _obj({"cover_letter": _STR})
 
 
 def empty_resume():
@@ -103,7 +108,7 @@ Hard rules (honesty):
 How to tailor:
 - headline: a short professional title aligned with the target role.
 - summary: 2-4 sentences connecting the candidate's strongest relevant experience to this role's core needs.
-- experience: keep every role (with original title, company and dates) but rewrite and reorder the bullets so the most relevant ones come first. Start bullets with strong action verbs and keep any quantified results. Older or less relevant roles get fewer bullets.
+- experience: keep every role (with original title, company and dates) and provide exactly five concise bullets per role, including older or less relevant roles. Keep each bullet to one sentence of about 15-25 words. Rewrite and reorder the bullets so the most relevant ones come first. Start bullets with strong action verbs and keep any quantified results. Use only distinct details supported by that role's master-resume content; never invent or repeat details to reach five bullets. If the source genuinely does not support five distinct bullets, include only the supported bullets.
 - skills: lead with the skills the job asks for that the candidate actually has; drop irrelevant ones.
 - projects and extra_sections: keep the ones that strengthen this application.
 - Keep contact details and education facts unchanged.
@@ -116,9 +121,13 @@ Analysis:
 - changes: short list of what you changed and why.
 - gaps_and_tips: practical advice (e.g. points to raise in the cover letter or interview)."""
 
+COVER_LETTER_SYSTEM = """Write a concise, polished cover letter for the target role.
+
+Use only facts in the supplied tailored resume and job description. Do not invent personal details, achievements, metrics, or familiarity with the company. Use a professional greeting without guessing a hiring manager's name, 3 short paragraphs, and a professional closing with the candidate's name. Keep it under 250 words and return plain text."""
+
 LENGTH_HINTS = {
-    "1": "Target length: must fit on ONE page. Be selective: about 3-5 bullets for recent roles, 1-2 for older roles.",
-    "2": "Target length: up to TWO pages. Include more detail for relevant roles.",
+    "1": "Target length: aim to fit on ONE page with concise wording, but do not reduce the requested five bullets per role.",
+    "2": "Target length: up to TWO pages. Keep five concise bullets per role.",
 }
 
 
@@ -136,3 +145,11 @@ def tailor_user_prompt(master_json, job_description, pages="1", extra=""):
         parts.append(f"Additional instructions from the candidate:\n{extra.strip()}")
     parts.append("Return the tailored resume and analysis as JSON.")
     return "\n\n".join(parts)
+
+
+def cover_letter_user_prompt(resume_json, job_description):
+    return (
+        f"<tailored_resume_json>\n{resume_json}\n</tailored_resume_json>\n\n"
+        f"<job_description>\n{job_description}\n</job_description>\n\n"
+        "Write a cover letter for this application."
+    )

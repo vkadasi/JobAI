@@ -37,7 +37,7 @@
           </label>
         </div>
         <div class="row end">
-          <button id="tailor-btn" class="primary">Tailor my resume</button>
+          <button id="tailor-btn" class="primary">Tailor resume &amp; cover letter</button>
         </div>
       </div>
 
@@ -84,6 +84,19 @@
             <div id="r-editor" class="editor"></div>
             <div class="preview-wrap"><iframe id="r-frame" title="PDF preview"></iframe><div id="r-frame-hint" class="frame-hint">Click "Preview PDF" to see the formatted resume here.</div></div>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="row between">
+            <h2>3. Cover letter</h2>
+            <div class="btns">
+              <button id="r-cover-copy">Copy</button>
+              <button id="r-cover-download" class="primary">Download TXT</button>
+            </div>
+          </div>
+          <p class="muted">Review and personalize this draft before sending. Changes are saved to History automatically.</p>
+          <label for="r-cover-letter" class="sr-only">Cover letter</label>
+          <textarea id="r-cover-letter" rows="16" placeholder="Your tailored cover letter will appear here."></textarea>
         </div>
       </div>
     </section>

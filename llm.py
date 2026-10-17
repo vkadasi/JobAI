@@ -48,24 +48,33 @@ def _anthropic_call(settings, system, user, schema):
     import anthropic
 
     client = anthropic.Anthropic(api_key=settings["api_key"], timeout=600)
-    kwargs = dict(
-        model=settings.get("model") or PRESETS["anthropic"]["model"],
-        max_tokens=32000,
-        system=system,
-        messages=[{"role": "user", "content": user}],
-        output_config={"effort": "medium", "format": {"type": "json_schema", "schema": schema}},
-    )
+    msg = None
+    last_bad_request = None
     try:
-        try:
-            # Server-side fallback: if the model declines, the API retries on a suitable model.
-            with client.beta.messages.stream(
-                betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs
-            ) as stream:
-                msg = stream.get_final_message()
-        except anthropic.BadRequestError:
-            # Older models / accounts may not accept fallbacks; retry without it.
-            with client.messages.stream(**kwargs) as stream:
-                msg = stream.get_final_message()
+        for token_limit in (64000, 32000):
+            kwargs = dict(
+                model=settings.get("model") or PRESETS["anthropic"]["model"],
+                max_tokens=token_limit,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+                output_config={"effort": "medium", "format": {"type": "json_schema", "schema": schema}},
+            )
+            try:
+                try:
+                    # Server-side fallback: if the model declines, the API retries on a suitable model.
+                    with client.beta.messages.stream(
+                        betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs
+                    ) as stream:
+                        msg = stream.get_final_message()
+                except anthropic.BadRequestError:
+                    # Older models / accounts may not accept fallbacks; retry without it.
+                    with client.messages.stream(**kwargs) as stream:
+                        msg = stream.get_final_message()
+                break
+            except anthropic.BadRequestError as e:
+                last_bad_request = e
+        if msg is None:
+            raise last_bad_request
     except anthropic.AuthenticationError:
         raise LLMError("Invalid Anthropic API key. Check it in Settings.")
     except anthropic.PermissionDeniedError:
@@ -84,7 +93,7 @@ def _anthropic_call(settings, system, user, schema):
     if msg.stop_reason == "refusal":
         raise LLMError("The model declined this request. Try rephrasing the extra instructions.")
     if msg.stop_reason == "max_tokens":
-        raise LLMError("The reply was cut off (too long). Try the 1-page option.")
+        raise LLMError("Anthropic cut off the reply at this model's output-token limit. Try a model with a larger output limit, or shorten the master resume.")
     text = "".join(b.text for b in msg.content if b.type == "text")
     return _extract_json(text)
 
@@ -112,13 +121,29 @@ def _openai_compatible_call(settings, system, user, schema):
     messages = [{"role": "system", "content": system_with_schema}, {"role": "user", "content": user}]
 
     try:
-        try:
-            resp = client.chat.completions.create(
-                model=model, messages=messages, response_format={"type": "json_object"}
-            )
-        except openai.BadRequestError:
-            # Some providers don't support response_format; the prompt still asks for JSON.
-            resp = client.chat.completions.create(model=model, messages=messages)
+        resp = None
+        last_bad_request = None
+        for token_limit in (8192, 4096):
+            for token_parameter in ("max_tokens", "max_completion_tokens"):
+                for response_format in ({"type": "json_object"}, None):
+                    kwargs = {
+                        "model": model,
+                        "messages": messages,
+                        token_parameter: token_limit,
+                    }
+                    if response_format:
+                        kwargs["response_format"] = response_format
+                    try:
+                        resp = client.chat.completions.create(**kwargs)
+                        break
+                    except openai.BadRequestError as e:
+                        last_bad_request = e
+                if resp is not None:
+                    break
+            if resp is not None:
+                break
+        if resp is None:
+            raise last_bad_request
     except openai.AuthenticationError:
         raise LLMError("Invalid API key. Check it in Settings.")
     except openai.PermissionDeniedError:
@@ -136,7 +161,7 @@ def _openai_compatible_call(settings, system, user, schema):
 
     choice = resp.choices[0]
     if choice.finish_reason == "length":
-        raise LLMError("The reply was cut off (too long). Try the 1-page option or a model with a larger output limit.")
+        raise LLMError("The AI provider cut off the reply at its output-token limit. Try a model with a larger output limit, or shorten the master resume.")
     return _extract_json(choice.message.content or "")
 
 
@@ -189,9 +214,17 @@ def parse_resume(settings, resume_text):
 def tailor_resume(settings, master, job_description, pages="1", extra=""):
     user = prompts.tailor_user_prompt(json.dumps(master, indent=1), job_description, pages, extra)
     data = call_json(settings, prompts.TAILOR_SYSTEM, user, prompts.TAILOR_SCHEMA)
+    resume = normalize_resume(data.get("resume", {}))
+    cover_letter_data = call_json(
+        settings,
+        prompts.COVER_LETTER_SYSTEM,
+        prompts.cover_letter_user_prompt(json.dumps(resume, indent=1), job_description),
+        prompts.COVER_LETTER_SCHEMA,
+    )
     analysis = data.get("analysis") if isinstance(data.get("analysis"), dict) else {}
     return {
-        "resume": normalize_resume(data.get("resume", {})),
+        "resume": resume,
+        "cover_letter": str(cover_letter_data.get("cover_letter", "")),
         "analysis": {
             "job_title": str(analysis.get("job_title", "")),
             "company": str(analysis.get("company", "")),

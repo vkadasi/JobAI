@@ -186,7 +186,11 @@ def history_update(item_id):
     it = _read_json(path, None)
     if not it:
         return _err("Not found.", 404)
-    it["resume"] = llm.normalize_resume(request.get_json(force=True).get("resume", {}))
+    body = request.get_json(force=True)
+    if "resume" in body:
+        it["resume"] = llm.normalize_resume(body["resume"])
+    if "cover_letter" in body:
+        it["cover_letter"] = str(body["cover_letter"])
     _write_json(path, it)
     return jsonify({"ok": True})
 

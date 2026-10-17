@@ -8,6 +8,7 @@ body { margin: 0; font-family: "Segoe UI", system-ui, -apple-system, Roboto, san
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
 .small { font-size: 12px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 h2 { font-size: 17px; margin: 0 0 10px; }
 h3 { font-size: 13px; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 

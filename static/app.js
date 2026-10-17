@@ -297,6 +297,7 @@ $("#m-preview").addEventListener("click", () => state.master && exportResume("pd
 
 function showResult(item) {
   state.current = item;
+  item.cover_letter = item.cover_letter || "";
   const a = item.analysis || {};
   $("#result").classList.remove("hidden");
   $("#r-title").textContent = [a.job_title, a.company].filter(Boolean).join(" · ") || "Tailored resume";
@@ -310,20 +311,53 @@ function showResult(item) {
   lis($("#changes"), a.changes);
   lis($("#tips"), a.gaps_and_tips);
   $("#jd").value = item.job_description || $("#jd").value;
+  $("#r-cover-letter").value = item.cover_letter;
 
   renderEditor($("#r-editor"), item.resume, () => {
     clearTimeout(state.saveTimer);
-    state.saveTimer = setTimeout(() => api(`/api/history/${item.id}`, { method: "PUT", body: { resume: item.resume } }).catch(() => {}), 800);
+    state.saveTimer = setTimeout(() => api(`/api/history/${item.id}`, {
+      method: "PUT", body: { resume: item.resume, cover_letter: item.cover_letter },
+    }).catch((e) => toast("Could not save changes to History: " + e.message, true)), 800);
   });
   $("#r-frame").removeAttribute("src");
   $("#r-frame-hint").classList.remove("hidden");
   exportResume("pdf", item.resume, item.analysis, $("#r-frame"));
 }
 
+$("#r-cover-letter").addEventListener("input", () => {
+  if (!state.current) return;
+  state.current.cover_letter = $("#r-cover-letter").value;
+  clearTimeout(state.saveTimer);
+  state.saveTimer = setTimeout(() => api(`/api/history/${state.current.id}`, {
+    method: "PUT", body: { cover_letter: state.current.cover_letter },
+  }).catch((e) => toast("Could not save the cover letter to History: " + e.message, true)), 800);
+});
+
+$("#r-cover-copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("#r-cover-letter").value);
+    toast("Cover letter copied.");
+  } catch (e) {
+    toast("Could not copy the cover letter. Check clipboard permissions.", true);
+  }
+});
+
+$("#r-cover-download").addEventListener("click", () => {
+  if (!state.current) return;
+  const blob = new Blob([$("#r-cover-letter").value], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const name = (state.current.analysis?.company || "Company").replace(/[^A-Za-z0-9_-]+/g, "_");
+  const a = el("a", { href: url, download: `Cover_Letter_${name}.txt` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+});
+
 $("#tailor-btn").addEventListener("click", async () => {
   const jd = $("#jd").value.trim();
   if (jd.length < 50) return toast("Paste the full job description first.", true);
-  busy("Tailoring the resume to this job… (usually 30–90 seconds)");
+  busy("Tailoring your resume and writing the cover letter… (usually 30–90 seconds)");
   try {
     const item = await apiJson("/api/tailor", { method: "POST", body: { job_description: jd, pages: $("#pages").value, extra: $("#extra").value } });
     showResult(item);
