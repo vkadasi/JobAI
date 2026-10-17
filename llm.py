@@ -215,16 +215,11 @@ def tailor_resume(settings, master, job_description, pages="1", extra=""):
     user = prompts.tailor_user_prompt(json.dumps(master, indent=1), job_description, pages, extra)
     data = call_json(settings, prompts.TAILOR_SYSTEM, user, prompts.TAILOR_SCHEMA)
     resume = normalize_resume(data.get("resume", {}))
-    cover_letter_data = call_json(
-        settings,
-        prompts.COVER_LETTER_SYSTEM,
-        prompts.cover_letter_user_prompt(json.dumps(resume, indent=1), job_description),
-        prompts.COVER_LETTER_SCHEMA,
-    )
+    cover_letter = generate_cover_letter(settings, master, resume, job_description)
     analysis = data.get("analysis") if isinstance(data.get("analysis"), dict) else {}
     return {
         "resume": resume,
-        "cover_letter": str(cover_letter_data.get("cover_letter", "")),
+        "cover_letter": cover_letter,
         "analysis": {
             "job_title": str(analysis.get("job_title", "")),
             "company": str(analysis.get("company", "")),
@@ -236,6 +231,23 @@ def tailor_resume(settings, master, job_description, pages="1", extra=""):
             "gaps_and_tips": list(analysis.get("gaps_and_tips", []) or []),
         },
     }
+
+
+def generate_cover_letter(settings, master, resume, job_description):
+    data = call_json(
+        settings,
+        prompts.COVER_LETTER_SYSTEM,
+        prompts.cover_letter_user_prompt(
+            json.dumps(master, indent=1),
+            json.dumps(normalize_resume(resume), indent=1),
+            job_description,
+        ),
+        prompts.COVER_LETTER_SCHEMA,
+    )
+    cover_letter = str(data.get("cover_letter", "")).strip()
+    if not cover_letter:
+        raise LLMError("The AI returned an empty cover letter. Please try updating it again.")
+    return cover_letter
 
 
 def test_connection(settings):

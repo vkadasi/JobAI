@@ -180,6 +180,29 @@ def history_get(item_id):
     return jsonify(it) if it else _err("Not found.", 404)
 
 
+@app.post("/api/history/<item_id>/cover-letter")
+def history_generate_cover_letter(item_id):
+    path = _history_path(item_id)
+    it = _read_json(path, None)
+    if not it:
+        return _err("Not found.", 404)
+    master = _read_json(MASTER_FILE, None)
+    if not master:
+        return _err("Set up your master resume first (Master Resume tab).")
+    body = request.get_json(force=True)
+    resume = llm.normalize_resume(body.get("resume", it.get("resume", {})))
+    try:
+        cover_letter = llm.generate_cover_letter(
+            load_settings(), master, resume, it.get("job_description", "")
+        )
+    except llm.LLMError as e:
+        return _err(str(e))
+    it["resume"] = resume
+    it["cover_letter"] = cover_letter
+    _write_json(path, it)
+    return jsonify({"cover_letter": cover_letter})
+
+
 @app.put("/api/history/<item_id>")
 def history_update(item_id):
     path = _history_path(item_id)

@@ -121,9 +121,9 @@ Analysis:
 - changes: short list of what you changed and why.
 - gaps_and_tips: practical advice (e.g. points to raise in the cover letter or interview)."""
 
-COVER_LETTER_SYSTEM = """Write a concise, polished cover letter for the target role.
+COVER_LETTER_SYSTEM = """Write a specific, polished cover letter for the target role.
 
-Use only facts in the supplied tailored resume and job description. Do not invent personal details, achievements, metrics, or familiarity with the company. Use a professional greeting without guessing a hiring manager's name, 3 short paragraphs, and a professional closing with the candidate's name. Keep it under 250 words and return plain text."""
+Use the master resume as the source of truth for the candidate's facts, and the tailored resume to identify which evidence is most relevant to this job. Personalize the letter: name the target role and company when available, refer to at least two specific relevant skills, projects, or achievements actually present in the resumes, and sign off with the candidate's name. Do not use generic claims in place of resume evidence, or invent personal details, achievements, metrics, or company familiarity. Use a professional greeting without guessing a hiring manager's name, 3 short paragraphs, and a professional closing. Keep it under 250 words and return plain text."""
 
 LENGTH_HINTS = {
     "1": "Target length: aim to fit on ONE page with concise wording, but do not reduce the requested five bullets per role.",
@@ -147,9 +147,10 @@ def tailor_user_prompt(master_json, job_description, pages="1", extra=""):
     return "\n\n".join(parts)
 
 
-def cover_letter_user_prompt(resume_json, job_description):
+def cover_letter_user_prompt(master_json, resume_json, job_description):
     return (
+        f"<master_resume_json>\n{master_json}\n</master_resume_json>\n\n"
         f"<tailored_resume_json>\n{resume_json}\n</tailored_resume_json>\n\n"
         f"<job_description>\n{job_description}\n</job_description>\n\n"
-        "Write a cover letter for this application."
+        "Write a personalized cover letter using specific candidate evidence from the resumes."
     )

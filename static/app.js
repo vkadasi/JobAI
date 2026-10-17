@@ -333,6 +333,26 @@ $("#r-cover-letter").addEventListener("input", () => {
   }).catch((e) => toast("Could not save the cover letter to History: " + e.message, true)), 800);
 });
 
+$("#r-cover-update").addEventListener("click", async () => {
+  if (!state.current) return;
+  const button = $("#r-cover-update");
+  button.disabled = true;
+  busy("Updating the cover letter from your resume…");
+  try {
+    const { cover_letter } = await apiJson(`/api/history/${state.current.id}/cover-letter`, {
+      method: "POST", body: { resume: state.current.resume },
+    });
+    state.current.cover_letter = cover_letter;
+    $("#r-cover-letter").value = cover_letter;
+    toast("Cover letter updated from your resume.");
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    button.disabled = false;
+    busy(null);
+  }
+});
+
 $("#r-cover-copy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText($("#r-cover-letter").value);

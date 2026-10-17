@@ -27,8 +27,9 @@ Everything runs on this laptop; your resume and API key stay in the `data` folde
 3. **Tailor**: paste a job description, choose 1 or 2 pages, optionally add instructions, and click **Tailor my resume**.
    You get a before/after match score, the keywords covered and missing, an editable resume with a live PDF preview,
    and a tailored cover letter, generated in a separate response to keep each AI output smaller.
-   The AI targets five concise bullets for each role when the master resume supports them.
-   Edit the cover letter, copy it, or download it as a text file.
+   The cover letter uses both the master and tailored resumes. The AI targets five concise bullets for each role
+   when the master resume supports them. Edit the cover letter, update it from your latest resume edits, copy it,
+   or download it as a text file.
 4. **History**: every tailored resume is saved and can be reopened, edited and re-downloaded.
 
 The AI is told never to invent jobs, titles, dates, degrees, skills or numbers. Anything the job asks for that
