@@ -325,12 +325,41 @@ function showResult(item) {
 }
 
 $("#r-cover-letter").addEventListener("input", () => {
-  if (!state.current) return;
-  state.current.cover_letter = $("#r-cover-letter").value;
+  const item = state.current;
+  if (!item) return;
+  item.cover_letter = $("#r-cover-letter").value;
   clearTimeout(state.saveTimer);
-  state.saveTimer = setTimeout(() => api(`/api/history/${state.current.id}`, {
-    method: "PUT", body: { cover_letter: state.current.cover_letter },
+  state.saveTimer = setTimeout(() => api(`/api/history/${item.id}`, {
+    method: "PUT", body: { cover_letter: item.cover_letter },
   }).catch((e) => toast("Could not save the cover letter to History: " + e.message, true)), 800);
+});
+
+$("#clear-session").addEventListener("click", async () => {
+  if (!confirm("Clear the current job description, instructions, and result? Saved History, your master resume, and settings will be kept.")) return;
+
+  const item = state.current;
+  clearTimeout(state.saveTimer);
+  state.saveTimer = null;
+  if (item) {
+    try {
+      await api(`/api/history/${item.id}`, {
+        method: "PUT", body: { resume: item.resume, cover_letter: item.cover_letter },
+      });
+    } catch (e) {
+      toast("Could not save the current result to History, so the session was not cleared: " + e.message, true);
+      return;
+    }
+  }
+
+  state.current = null;
+  $("#jd").value = "";
+  $("#extra").value = "";
+  $("#result").classList.add("hidden");
+  $("#r-editor").innerHTML = "";
+  $("#r-cover-letter").value = "";
+  $("#r-frame").removeAttribute("src");
+  $("#r-frame-hint").classList.remove("hidden");
+  toast("Current session cleared. Saved History was kept.");
 });
 
 $("#r-cover-update").addEventListener("click", async () => {
@@ -377,14 +406,18 @@ $("#r-cover-download").addEventListener("click", () => {
 $("#tailor-btn").addEventListener("click", async () => {
   const jd = $("#jd").value.trim();
   if (jd.length < 50) return toast("Paste the full job description first.", true);
-  busy("Tailoring your resume and writing the cover letter… (usually 30–90 seconds)");
+  $("#tailor-btn").disabled = true;
+  $("#clear-session").disabled = true;
+  busy("Tailoring your resume role by role and writing the cover letter… This may take a few minutes.");
   try {
-    const item = await apiJson("/api/tailor", { method: "POST", body: { job_description: jd, pages: $("#pages").value, extra: $("#extra").value } });
+    const item = await apiJson("/api/tailor", { method: "POST", body: { job_description: jd, extra: $("#extra").value } });
     showResult(item);
     $("#result").scrollIntoView({ behavior: "smooth" });
   } catch (e) {
     toast(e.message, true);
   } finally {
+    $("#tailor-btn").disabled = false;
+    $("#clear-session").disabled = false;
     busy(null);
   }
 });

@@ -147,7 +147,7 @@ def tailor():
     if not master:
         return _err("Set up your master resume first (Master Resume tab).")
     try:
-        result = llm.tailor_resume(load_settings(), master, jd, str(body.get("pages", "1")), body.get("extra", ""))
+        result = llm.tailor_resume(load_settings(), master, jd, body.get("extra", ""))
     except llm.LLMError as e:
         return _err(str(e))
 

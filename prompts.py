@@ -56,6 +56,11 @@ RESUME_SCHEMA = _obj({
     "extra_sections": {"type": "array", "items": _obj({"title": _STR, "items": _STR_LIST})},
 })
 
+TAILOR_RESUME_SCHEMA = copy.deepcopy(RESUME_SCHEMA)
+TAILOR_EXPERIENCE_SCHEMA = TAILOR_RESUME_SCHEMA["properties"]["experience"]["items"]
+TAILOR_EXPERIENCE_SCHEMA["properties"].pop("bullets")
+TAILOR_EXPERIENCE_SCHEMA["required"].remove("bullets")
+
 ANALYSIS_SCHEMA = _obj({
     "job_title": _STR,
     "company": _STR,
@@ -69,10 +74,16 @@ ANALYSIS_SCHEMA = _obj({
 
 TAILOR_SCHEMA = _obj({
     "analysis": ANALYSIS_SCHEMA,
-    "resume": copy.deepcopy(RESUME_SCHEMA),
+    "resume": TAILOR_RESUME_SCHEMA,
 })
 
 COVER_LETTER_SCHEMA = _obj({"cover_letter": _STR})
+EXPERIENCE_BULLETS_SCHEMA = _obj({
+    "roles": {"type": "array", "items": _obj({
+        "role_index": {"type": "integer"},
+        "bullets": _STR_LIST,
+    })},
+})
 
 
 def empty_resume():
@@ -108,7 +119,7 @@ Hard rules (honesty):
 How to tailor:
 - headline: a short professional title aligned with the target role.
 - summary: 2-4 sentences connecting the candidate's strongest relevant experience to this role's core needs.
-- experience: keep every role (with original title, company and dates) and provide exactly five concise bullets per role, including older or less relevant roles. Keep each bullet to one sentence of about 15-25 words. Rewrite and reorder the bullets so the most relevant ones come first. Start bullets with strong action verbs and keep any quantified results. Use only distinct details supported by that role's master-resume content; never invent or repeat details to reach five bullets. If the source genuinely does not support five distinct bullets, include only the supported bullets.
+- experience: preserve every role's original title, company, location and dates. Its bullets are generated separately from that role's source content.
 - skills: lead with the skills the job asks for that the candidate actually has; drop irrelevant ones.
 - projects and extra_sections: keep the ones that strengthen this application.
 - Keep contact details and education facts unchanged.
@@ -125,25 +136,36 @@ COVER_LETTER_SYSTEM = """Write a specific, polished cover letter for the target 
 
 Use the master resume as the source of truth for the candidate's facts, and the tailored resume to identify which evidence is most relevant to this job. Personalize the letter: name the target role and company when available, refer to at least two specific relevant skills, projects, or achievements actually present in the resumes, and sign off with the candidate's name. Do not use generic claims in place of resume evidence, or invent personal details, achievements, metrics, or company familiarity. Use a professional greeting without guessing a hiring manager's name, 3 short paragraphs, and a professional closing. Keep it under 250 words and return plain text."""
 
-LENGTH_HINTS = {
-    "1": "Target length: aim to fit on ONE page with concise wording, but do not reduce the requested five bullets per role.",
-    "2": "Target length: up to TWO pages. Keep five concise bullets per role.",
-}
+EXPERIENCE_BULLETS_SYSTEM = """Tailor experience bullets for the supplied resume roles to a specific job description.
 
+Return one result for every supplied role, preserving its role_index exactly. Each result should have up to five concise, distinct bullets, aiming for five when the source supports them. Use only details from that role's source content; do not borrow facts from other roles, invent metrics, or repeat points. Start each bullet with a strong action verb, keep it to one sentence, and put the most job-relevant points first."""
 
 def parse_user_prompt(resume_text):
     return f"Convert this resume into the JSON structure.\n\n<resume_text>\n{resume_text}\n</resume_text>"
 
 
-def tailor_user_prompt(master_json, job_description, pages="1", extra=""):
+def tailor_user_prompt(master_json, job_description, extra=""):
     parts = [
         f"<master_resume_json>\n{master_json}\n</master_resume_json>",
         f"<job_description>\n{job_description}\n</job_description>",
-        LENGTH_HINTS.get(pages, LENGTH_HINTS["1"]),
+        "Do not limit the resume to a page count. Preserve relevant qualifications, experience, projects, and education supported by the master resume.",
+        "Return the tailored resume structure and analysis. Keep all original roles, but do not include experience bullets; they will be tailored separately for each role.",
     ]
     if extra.strip():
         parts.append(f"Additional instructions from the candidate:\n{extra.strip()}")
     parts.append("Return the tailored resume and analysis as JSON.")
+    return "\n\n".join(parts)
+
+
+def experience_bullets_user_prompt(roles_json, job_description, extra=""):
+    parts = [
+        f"<source_roles_json>\n{roles_json}\n</source_roles_json>",
+        f"<job_description>\n{job_description}\n</job_description>",
+        "Do not limit the resume to a page count.",
+    ]
+    if extra.strip():
+        parts.append(f"Additional instructions from the candidate:\n{extra.strip()}")
+    parts.append("Return tailored bullets for every supplied role as JSON, keeping each role_index unchanged.")
     return "\n\n".join(parts)
 
 

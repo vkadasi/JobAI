@@ -2,6 +2,7 @@
 
 import json
 import re
+import time
 
 import prompts
 
@@ -17,9 +18,56 @@ PRESETS = {
     "custom": {"label": "Other (OpenAI-compatible)", "base_url": "", "model": ""},
 }
 
+EXPERIENCE_BATCH_SIZE = 3
+
 
 class LLMError(Exception):
     """An error with a message that is safe and useful to show in the UI."""
+
+
+def _is_quota_error(error):
+    details = [str(error), str(getattr(error, "code", "") or "")]
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        error_body = body.get("error", body)
+        if isinstance(error_body, dict):
+            details.extend(str(error_body.get(key, "") or "") for key in ("code", "type", "message"))
+    text = " ".join(details).lower()
+    return any(term in text for term in (
+        "insufficient_quota", "insufficient quota", "out of credits",
+        "insufficient credits", "credit balance", "billing hard limit",
+        "exceeded your current quota", "check your plan and billing",
+        "credit balance is too low",
+    ))
+
+
+def _retry_delay(error, fallback):
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", None) or {}
+    retry_after = headers.get("retry-after") or headers.get("Retry-After")
+    try:
+        return min(60.0, max(0.0, float(retry_after)))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _with_rate_limit_retries(request, error_type, provider):
+    delays = (2, 5, 10)
+    for attempt in range(len(delays) + 1):
+        try:
+            return request()
+        except error_type as error:
+            if _is_quota_error(error):
+                raise LLMError(
+                    f"{provider} reports that the API account has run out of credits or quota. "
+                    "Check the provider's billing and usage limits."
+                ) from error
+            if attempt == len(delays):
+                raise LLMError(
+                    f"{provider} is temporarily rate limiting requests after several retries. "
+                    "Wait a minute and try again."
+                ) from error
+            time.sleep(_retry_delay(error, delays[attempt]))
 
 
 def _extract_json(text):
@@ -47,10 +95,11 @@ def _extract_json(text):
 def _anthropic_call(settings, system, user, schema):
     import anthropic
 
-    client = anthropic.Anthropic(api_key=settings["api_key"], timeout=600)
-    msg = None
-    last_bad_request = None
-    try:
+    client = anthropic.Anthropic(api_key=settings["api_key"], timeout=600, max_retries=0)
+
+    def request():
+        msg = None
+        last_bad_request = None
         for token_limit in (64000, 32000):
             kwargs = dict(
                 model=settings.get("model") or PRESETS["anthropic"]["model"],
@@ -70,19 +119,19 @@ def _anthropic_call(settings, system, user, schema):
                     # Older models / accounts may not accept fallbacks; retry without it.
                     with client.messages.stream(**kwargs) as stream:
                         msg = stream.get_final_message()
-                break
+                return msg
             except anthropic.BadRequestError as e:
                 last_bad_request = e
-        if msg is None:
-            raise last_bad_request
+        raise last_bad_request
+
+    try:
+        msg = _with_rate_limit_retries(request, anthropic.RateLimitError, "Anthropic")
     except anthropic.AuthenticationError:
         raise LLMError("Invalid Anthropic API key. Check it in Settings.")
     except anthropic.PermissionDeniedError:
         raise LLMError("This API key doesn't have access to that model.")
     except anthropic.NotFoundError:
         raise LLMError("Model not found. Check the model name in Settings.")
-    except anthropic.RateLimitError:
-        raise LLMError("Rate limited by Anthropic. Wait a minute and try again.")
     except anthropic.BadRequestError as e:
         raise LLMError(f"Request rejected: {e.message}")
     except anthropic.APIStatusError as e:
@@ -113,45 +162,38 @@ def _openai_compatible_call(settings, system, user, schema):
     if not model:
         raise LLMError("Set the model name in Settings.")
 
-    client = openai.OpenAI(api_key=settings["api_key"], base_url=base_url, timeout=600)
+    client = openai.OpenAI(api_key=settings["api_key"], base_url=base_url, timeout=600, max_retries=0)
     system_with_schema = (
         f"{system}\n\nRespond with ONLY a JSON object (no markdown, no commentary) "
         f"that matches this JSON Schema exactly:\n{json.dumps(schema)}"
     )
     messages = [{"role": "system", "content": system_with_schema}, {"role": "user", "content": user}]
 
-    try:
-        resp = None
+    def request():
         last_bad_request = None
-        for token_limit in (8192, 4096):
-            for token_parameter in ("max_tokens", "max_completion_tokens"):
-                for response_format in ({"type": "json_object"}, None):
-                    kwargs = {
-                        "model": model,
-                        "messages": messages,
-                        token_parameter: token_limit,
-                    }
-                    if response_format:
-                        kwargs["response_format"] = response_format
-                    try:
-                        resp = client.chat.completions.create(**kwargs)
-                        break
-                    except openai.BadRequestError as e:
-                        last_bad_request = e
-                if resp is not None:
-                    break
-            if resp is not None:
-                break
-        if resp is None:
-            raise last_bad_request
+        request_variants = (
+            {"max_tokens": 8192, "response_format": {"type": "json_object"}},
+            {"max_tokens": 8192},
+            {"max_completion_tokens": 8192, "response_format": {"type": "json_object"}},
+            {"max_completion_tokens": 8192},
+        )
+        for options in request_variants:
+            try:
+                return client.chat.completions.create(
+                    model=model, messages=messages, **options
+                )
+            except openai.BadRequestError as e:
+                last_bad_request = e
+        raise last_bad_request
+
+    try:
+        resp = _with_rate_limit_retries(request, openai.RateLimitError, "The AI provider")
     except openai.AuthenticationError:
         raise LLMError("Invalid API key. Check it in Settings.")
     except openai.PermissionDeniedError:
         raise LLMError("This API key doesn't have access to that model.")
     except openai.NotFoundError:
         raise LLMError("Model or endpoint not found. Check the base URL and model name in Settings.")
-    except openai.RateLimitError:
-        raise LLMError("Rate limited or out of credits. Wait a minute or check your plan.")
     except openai.BadRequestError as e:
         raise LLMError(f"Request rejected: {e.message}")
     except openai.APIStatusError as e:
@@ -211,10 +253,64 @@ def parse_resume(settings, resume_text):
     return normalize_resume(data)
 
 
-def tailor_resume(settings, master, job_description, pages="1", extra=""):
-    user = prompts.tailor_user_prompt(json.dumps(master, indent=1), job_description, pages, extra)
-    data = call_json(settings, prompts.TAILOR_SYSTEM, user, prompts.TAILOR_SCHEMA)
+def tailor_resume(settings, master, job_description, extra=""):
+    user = prompts.tailor_user_prompt(json.dumps(master, indent=1), job_description, extra)
+    try:
+        data = call_json(settings, prompts.TAILOR_SYSTEM, user, prompts.TAILOR_SCHEMA)
+    except LLMError as e:
+        raise LLMError(f"Could not generate the tailored resume structure: {e}") from e
     resume = normalize_resume(data.get("resume", {}))
+    source_experience = normalize_resume({"experience": master.get("experience", [])})["experience"]
+    resume["experience"] = source_experience
+    for start in range(0, len(source_experience), EXPERIENCE_BATCH_SIZE):
+        batch = source_experience[start:start + EXPERIENCE_BATCH_SIZE]
+        roles = [{"role_index": start + offset, "role": role} for offset, role in enumerate(batch)]
+        try:
+            result = call_json(
+                settings,
+                prompts.EXPERIENCE_BULLETS_SYSTEM,
+                prompts.experience_bullets_user_prompt(
+                    json.dumps(roles, indent=1), job_description, extra
+                ),
+                prompts.EXPERIENCE_BULLETS_SCHEMA,
+            )
+        except LLMError as e:
+            companies = ", ".join(
+                role.get("company") or role.get("title") or "a role" for role in batch
+            )
+            raise LLMError(f"Could not tailor bullets for {companies}: {e}") from e
+        generated_roles = result.get("roles", [])
+        if not isinstance(generated_roles, list):
+            raise LLMError(
+                "The AI returned invalid experience bullets. Please try tailoring again."
+            )
+        expected_indexes = set(range(start, start + len(batch)))
+        actual_indexes = []
+        for generated in generated_roles:
+            if (
+                not isinstance(generated, dict)
+                or isinstance(generated.get("role_index"), bool)
+                or not isinstance(generated.get("role_index"), int)
+            ):
+                raise LLMError(
+                    "The AI returned invalid experience bullets. Please try tailoring again."
+                )
+            actual_indexes.append(generated["role_index"])
+        if set(actual_indexes) != expected_indexes or len(actual_indexes) != len(expected_indexes):
+            raise LLMError(
+                "The AI returned incomplete or mismatched experience bullets. Please try tailoring again."
+            )
+        for generated in generated_roles:
+            index = generated["role_index"]
+            bullets = generated.get("bullets", [])
+            if not isinstance(bullets, list):
+                raise LLMError(
+                    "The AI returned invalid experience bullets. Please try tailoring again."
+                )
+            resume["experience"][index]["bullets"] = [
+                str(b).strip() for b in bullets if str(b).strip()
+            ][:5]
+
     cover_letter = generate_cover_letter(settings, master, resume, job_description)
     analysis = data.get("analysis") if isinstance(data.get("analysis"), dict) else {}
     return {

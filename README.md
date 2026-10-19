@@ -24,12 +24,15 @@ Everything runs on this laptop; your resume and API key stay in the `data` folde
 2. **Master Resume**: upload the full resume (PDF, DOCX or TXT) once. The AI turns it into editable sections;
    check every section, fix anything wrong and click **Save master resume**.
    Put *everything* here, because tailored versions only use what's in the master resume.
-3. **Tailor**: paste a job description, choose 1 or 2 pages, optionally add instructions, and click **Tailor my resume**.
+3. **Tailor**: paste a job description, optionally add instructions, and click **Tailor my resume**.
    You get a before/after match score, the keywords covered and missing, an editable resume with a live PDF preview,
-   and a tailored cover letter, generated in a separate response to keep each AI output smaller.
+   and a tailored cover letter. Experience bullets are generated in small batches to reduce API calls while keeping
+   AI responses manageable.
    The cover letter uses both the master and tailored resumes. The AI targets five concise bullets for each role
-   when the master resume supports them. Edit the cover letter, update it from your latest resume edits, copy it,
+   when the master resume supports them. Resume length is not restricted to a fixed page count. Edit the cover letter,
+   update it from your latest resume edits, copy it,
    or download it as a text file.
+   Use **Clear current session** to reset the current job and result; saved History, your master resume, and settings are kept.
 4. **History**: every tailored resume is saved and can be reopened, edited and re-downloaded.
 
 The AI is told never to invent jobs, titles, dates, degrees, skills or numbers. Anything the job asks for that
@@ -43,6 +46,7 @@ isn't in your experience is listed under "Missing" instead of being added. Still
 | Setup failed / packages won't install | Check the internet connection, delete the `.venv` folder, run `start.bat` again. |
 | Browser didn't open | Open <http://127.0.0.1:5050> yourself. |
 | "Invalid API key" / "Model not found" | Fix them in **Settings** and click **Test connection**. |
+| Rate limited during tailoring | Temporary rate limits are retried automatically. If the provider reports exhausted credits or quota, check your API billing and usage limits. |
 | Upload says it can't read the file | It's probably a scanned PDF. Upload the DOCX, or use **Paste text instead**. |
 | Port already in use | Another copy is already running. Close the other black window. |
 
