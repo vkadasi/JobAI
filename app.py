@@ -146,8 +146,14 @@ def tailor():
     master = _read_json(MASTER_FILE, None)
     if not master:
         return _err("Set up your master resume first (Master Resume tab).")
+    include_cover_letter = body.get("include_cover_letter", True)
+    if not isinstance(include_cover_letter, bool):
+        return _err("Choose whether to generate a cover letter.")
     try:
-        result = llm.tailor_resume(load_settings(), master, jd, body.get("extra", ""))
+        result = llm.tailor_resume(
+            load_settings(), master, jd, body.get("extra", ""),
+            include_cover_letter=include_cover_letter,
+        )
     except llm.LLMError as e:
         return _err(str(e))
 

@@ -3,6 +3,8 @@
 import json
 import re
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import prompts
 
@@ -17,9 +19,6 @@ PRESETS = {
     "deepseek": {"label": "DeepSeek", "base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
     "custom": {"label": "Other (OpenAI-compatible)", "base_url": "", "model": ""},
 }
-
-EXPERIENCE_BATCH_SIZE = 3
-
 
 class LLMError(Exception):
     """An error with a message that is safe and useful to show in the UI."""
@@ -44,15 +43,47 @@ def _is_quota_error(error):
 def _retry_delay(error, fallback):
     response = getattr(error, "response", None)
     headers = getattr(response, "headers", None) or {}
-    retry_after = headers.get("retry-after") or headers.get("Retry-After")
-    try:
-        return min(60.0, max(0.0, float(retry_after)))
-    except (TypeError, ValueError):
+    normalized_headers = {str(key).lower(): value for key, value in headers.items()}
+    reset_headers = (
+        "retry-after",
+        "x-ratelimit-reset-requests",
+        "x-ratelimit-reset-tokens",
+        "anthropic-ratelimit-requests-reset",
+        "anthropic-ratelimit-tokens-reset",
+    )
+    server_delays = []
+    for name in reset_headers:
+        value = normalized_headers.get(name)
+        if value is None:
+            continue
+        value = str(value).strip()
+        try:
+            delay = float(value)
+        except ValueError:
+            duration_parts = list(re.finditer(r"(\d+(?:\.\d+)?)\s*(ms|s|m|h)", value, re.I))
+            if duration_parts and "".join(part.group(0) for part in duration_parts).replace(" ", "") == value.replace(" ", ""):
+                units = {"ms": 0.001, "s": 1, "m": 60, "h": 3600}
+                delay = sum(
+                    float(part.group(1)) * units[part.group(2).lower()]
+                    for part in duration_parts
+                )
+            elif name == "retry-after":
+                try:
+                    retry_at = parsedate_to_datetime(value)
+                    delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
+                except (TypeError, ValueError, OverflowError):
+                    continue
+            else:
+                continue
+        if delay >= 0:
+            server_delays.append(delay)
+    if not server_delays:
         return fallback
+    return max(server_delays)
 
 
 def _with_rate_limit_retries(request, error_type, provider):
-    delays = (2, 5, 10)
+    delays = (5, 15, 30, 60)
     for attempt in range(len(delays) + 1):
         try:
             return request()
@@ -64,10 +95,16 @@ def _with_rate_limit_retries(request, error_type, provider):
                 ) from error
             if attempt == len(delays):
                 raise LLMError(
-                    f"{provider} is temporarily rate limiting requests after several retries. "
-                    "Wait a minute and try again."
+                    f"{provider} kept rate limiting requests after retries over nearly two minutes. "
+                    "Wait for the provider's rate limit to reset, then try again."
                 ) from error
-            time.sleep(_retry_delay(error, delays[attempt]))
+            delay = _retry_delay(error, delays[attempt])
+            if delay > 180:
+                raise LLMError(
+                    f"{provider} asked the app to wait {int(delay)} seconds before retrying. "
+                    "Wait for the provider's rate limit to reset, then try again."
+                ) from error
+            time.sleep(delay)
 
 
 def _extract_json(text):
@@ -253,7 +290,7 @@ def parse_resume(settings, resume_text):
     return normalize_resume(data)
 
 
-def tailor_resume(settings, master, job_description, extra=""):
+def tailor_resume(settings, master, job_description, extra="", include_cover_letter=True):
     user = prompts.tailor_user_prompt(json.dumps(master, indent=1), job_description, extra)
     try:
         data = call_json(settings, prompts.TAILOR_SYSTEM, user, prompts.TAILOR_SCHEMA)
@@ -262,29 +299,13 @@ def tailor_resume(settings, master, job_description, extra=""):
     resume = normalize_resume(data.get("resume", {}))
     source_experience = normalize_resume({"experience": master.get("experience", [])})["experience"]
     resume["experience"] = source_experience
-    for start in range(0, len(source_experience), EXPERIENCE_BATCH_SIZE):
-        batch = source_experience[start:start + EXPERIENCE_BATCH_SIZE]
-        roles = [{"role_index": start + offset, "role": role} for offset, role in enumerate(batch)]
-        try:
-            result = call_json(
-                settings,
-                prompts.EXPERIENCE_BULLETS_SYSTEM,
-                prompts.experience_bullets_user_prompt(
-                    json.dumps(roles, indent=1), job_description, extra
-                ),
-                prompts.EXPERIENCE_BULLETS_SCHEMA,
-            )
-        except LLMError as e:
-            companies = ", ".join(
-                role.get("company") or role.get("title") or "a role" for role in batch
-            )
-            raise LLMError(f"Could not tailor bullets for {companies}: {e}") from e
-        generated_roles = result.get("roles", [])
+    if source_experience:
+        generated_roles = data.get("experience_bullets", [])
         if not isinstance(generated_roles, list):
             raise LLMError(
                 "The AI returned invalid experience bullets. Please try tailoring again."
             )
-        expected_indexes = set(range(start, start + len(batch)))
+        expected_indexes = set(range(len(source_experience)))
         actual_indexes = []
         for generated in generated_roles:
             if (
@@ -311,7 +332,10 @@ def tailor_resume(settings, master, job_description, extra=""):
                 str(b).strip() for b in bullets if str(b).strip()
             ][:5]
 
-    cover_letter = generate_cover_letter(settings, master, resume, job_description)
+    cover_letter = (
+        generate_cover_letter(settings, master, resume, job_description)
+        if include_cover_letter else ""
+    )
     analysis = data.get("analysis") if isinstance(data.get("analysis"), dict) else {}
     return {
         "resume": resume,

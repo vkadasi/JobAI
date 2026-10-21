@@ -312,6 +312,7 @@ function showResult(item) {
   lis($("#tips"), a.gaps_and_tips);
   $("#jd").value = item.job_description || $("#jd").value;
   $("#r-cover-letter").value = item.cover_letter;
+  $("#cover-letter-card").classList.toggle("hidden", !item.cover_letter);
 
   renderEditor($("#r-editor"), item.resume, () => {
     clearTimeout(state.saveTimer);
@@ -403,24 +404,34 @@ $("#r-cover-download").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 });
 
-$("#tailor-btn").addEventListener("click", async () => {
+async function tailor(includeCoverLetter) {
   const jd = $("#jd").value.trim();
   if (jd.length < 50) return toast("Paste the full job description first.", true);
-  $("#tailor-btn").disabled = true;
+  $("#tailor-resume-btn").disabled = true;
+  $("#tailor-cover-btn").disabled = true;
   $("#clear-session").disabled = true;
-  busy("Tailoring your resume role by role and writing the cover letter… This may take a few minutes.");
+  busy(includeCoverLetter
+    ? "Tailoring your resume role by role and writing the cover letter… This may take a few minutes."
+    : "Tailoring your resume role by role… This may take a few minutes.");
   try {
-    const item = await apiJson("/api/tailor", { method: "POST", body: { job_description: jd, extra: $("#extra").value } });
+    const item = await apiJson("/api/tailor", {
+      method: "POST",
+      body: { job_description: jd, extra: $("#extra").value, include_cover_letter: includeCoverLetter },
+    });
     showResult(item);
     $("#result").scrollIntoView({ behavior: "smooth" });
   } catch (e) {
     toast(e.message, true);
   } finally {
-    $("#tailor-btn").disabled = false;
+    $("#tailor-resume-btn").disabled = false;
+    $("#tailor-cover-btn").disabled = false;
     $("#clear-session").disabled = false;
     busy(null);
   }
-});
+}
+
+$("#tailor-resume-btn").addEventListener("click", () => tailor(false));
+$("#tailor-cover-btn").addEventListener("click", () => tailor(true));
 
 $("#r-preview").addEventListener("click", () => state.current && exportResume("pdf", state.current.resume, state.current.analysis, $("#r-frame")));
 $("#r-pdf").addEventListener("click", () => state.current && exportResume("pdf", state.current.resume, state.current.analysis));
